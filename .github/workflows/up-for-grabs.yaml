@@ -27,7 +27,10 @@ jobs:
             const AGENT_NAME = "The Sorting Hat";
             const TARGET_LABEL = "good-first-issue";
             const PRE_SCREEN_THRESHOLD = 65;
-            const LLM_MODEL = "gemini-1.5-flash-latest";
+            
+            // --- FIX: Switched to the universally available gemini-pro model ---
+            const LLM_MODEL = "gemini-pro";
+            
             const GEMINI_API_KEY = "${{ secrets.GEMINI_API_KEY }}";
 
             // Context from the GitHub event
