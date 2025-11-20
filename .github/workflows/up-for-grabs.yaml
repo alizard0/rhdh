@@ -1,0 +1,125 @@
+# .github/workflows/sorting-hat.yml
+name: 'The Sorting Hat'
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions:
+  pull-requests: write # To add labels and comments
+  contents: read      # To checkout the code and run git diff
+
+jobs:
+  sorting-hat-ceremony:
+    runs-on: ubuntu-latest
+    steps:
+      - name: A new pull request arrives for the Sorting Ceremony
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for git diff
+
+      - name: The Sorting Hat examines the pull request
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Agent Configuration
+            const AGENT_NAME = "The Sorting Hat";
+            const TARGET_LABEL = "good-first-issue";
+            const PRE_SCREEN_THRESHOLD = 65;
+            
+            // --- FIX: Switched to the universally available gemini-pro model ---
+            const LLM_MODEL = "gemini-pro";
+            
+            const GEMINI_API_KEY = "${{ secrets.GEMINI_API_KEY }}";
+
+            // Context from the GitHub event
+            const pr = context.payload.pull_request;
+            const repo = context.repo;
+
+            // --- 1. Guard Clause: Skip Draft/WIP PRs ---
+            const title = pr.title.toLowerCase();
+            if (pr.draft || title.startsWith('wip')) {
+              console.log(`${AGENT_NAME}: This one's not ready yet. Skipping.`);
+              return;
+            }
+
+            // =================================================================
+            // === STAGE 1: HEURISTIC PRE-SCREENING ============================
+            // =================================================================
+            let heuristicScore = 0;
+            const reasons = [];
+            const body = (pr.body || '').toLowerCase();
+
+            // Rule: Lines of Code (LoC)
+            const totalChanges = pr.additions + pr.deletions;
+            if (totalChanges <= 10) { heuristicScore += 40; reasons.push('🎯 A tiny change'); }
+            else if (totalChanges <= 40) { heuristicScore += 20; reasons.push('✅ A small change'); }
+            // Rule: Number of Files
+            if (pr.changed_files <= 2) { heuristicScore += 20; reasons.push('✅ A focused mind'); }
+            // Rule: Dependency Bot Author
+            const author = pr.user.login;
+            if (author.includes('dependabot[bot]') || author.includes('renovate[bot]')) { heuristicScore += 25; reasons.push('📦 A package update'); }
+            // Rule: Commit Count
+            if (pr.commits < 2) { heuristicScore += 20; reasons.push('⚛️ A single, clear purpose'); }
+            // Rule: "docs" Keyword
+            let docsKeywordFound = false;
+            if (title.includes('docs') || body.includes('docs')) {
+              docsKeywordFound = true;
+            } else {
+              const { data: commits } = await github.rest.pulls.listCommits({ ...repo, pull_number: pr.number });
+              for (const commitData of commits) {
+                if (commitData.commit.message.toLowerCase().includes('docs')) {
+                  docsKeywordFound = true; break; }
+              }
+            }
+            if (docsKeywordFound) { heuristicScore += 20; reasons.push('📚 A thirst for knowledge'); }
+            // Rule: Cherry-Pick
+            if (title.includes('cherry-pick') || body.includes('cherry-pick')) { heuristicScore += 15; reasons.push('🍒 A task already proven'); }
+            
+            console.log(`${AGENT_NAME}: My thoughts on this PR... Score: ${heuristicScore}. Reasons: ${reasons.join(', ')}`);
+
+            if (heuristicScore < PRE_SCREEN_THRESHOLD) {
+              console.log(`${AGENT_NAME}: Hmmm, difficult. Very difficult. Better suited for an experienced contributor. Halting.`);
+              return;
+            }
+
+            // =================================================================
+            // === STAGE 2: LLM VALIDATION (Legilimency) =======================
+            // =================================================================
+            console.log(`${AGENT_NAME}: I see potential. Let's have a deeper look...`);
+            try {
+              const { execSync } = require('child_process');
+              const diff = execSync(`git diff ${pr.base.sha}..${pr.head.sha}`).toString();
+
+              if (diff.length > 8000 || diff.length === 0) {
+                console.log(`${AGENT_NAME}: The mind of this PR is too vast or empty. Skipping.`);
+                return;
+              }
+
+              const prompt = `You are The Sorting Hat from Harry Potter, but for code. Your goal is to analyze a code diff that has been pre-selected as a likely candidate for a new contributor. **TASK:** Validate if this change is genuinely simple and provide a helpful, plain-English guide for a beginner in a JSON format. **ASSESSMENT CRITERIA & OUTPUT FORMAT:** 1. \`is_confirmed_simple\`: A boolean. 2. \`summary_for_newcomer\`: A friendly summary of the change's purpose. 3. \`review_guidance\`: Bullet points on how to review it. **CODE DIFF TO ANALYZE:** \`\`\`diff\n${diff}\n\`\`\` **YOUR RESPONSE (JSON only):**`;
+
+              const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${LLM_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+              const requestBody = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } };
+              const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+
+              if (!response.ok) { const errorBody = await response.text(); throw new Error(`API call failed: ${response.statusText}. Body: ${errorBody}`); }
+              
+              const result = await response.json();
+              const llmAnalysis = JSON.parse(result.candidates[0].content.parts[0].text);
+
+              if (!llmAnalysis.is_confirmed_simple) {
+                console.log(`${AGENT_NAME}: My deeper look reveals hidden complexity. Not this time.`);
+                return;
+              }
+
+              // --- FINAL ACTION: The Sorting ---
+              console.log(`${AGENT_NAME}: Yes, I know just what to do with this one...`);
+              await github.rest.issues.addLabels({ ...repo, issue_number: pr.number, labels: [TARGET_LABEL] });
+
+              const commentBody = `Hmm, another pull request. Let's see what we have here...\n\n*I've looked inside its mind and I know its purpose. There's courage, and a thirst to prove itself. I know just what to do with you...*\n\n> ## Better be... A GOOD FIRST ISSUE!\n\n**Welcome, new contributor!** This task has been chosen for you. Here is what you need to know:\n\n#### The Purpose of this Change\n${llmAnalysis.summary_for_newcomer}\n\n#### How to Review This\n${llmAnalysis.review_guidance}\n\n---\n*The Sorting Hat has spoken. A maintainer can remove the \`${TARGET_LABEL}\` label if they disagree with my choice.*`;
+              await github.rest.issues.createComment({ ...repo, issue_number: pr.number, body: commentBody });
+
+            } catch (error) {
+              console.error(`${AGENT_NAME}: My magic has failed me...`, error);
+            }
