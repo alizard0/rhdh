@@ -156,8 +156,8 @@ catalog:
 
 # Plugin: PagerDuty
 pagerduty:
-  # uncomment the following, and provide a URL to override the default URL used for events
-  # eventsBaseUrl: <PagerDuty Event URL>
+   # uncomment the following, and provide a URL to override the default URL used for events
+   eventsBaseUrl: <PagerDuty Event URL>
 
 # Plugin: Lighthouse
 lighthouse:
